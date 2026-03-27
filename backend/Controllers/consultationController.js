@@ -269,9 +269,16 @@ if (!hasAccess) {
 
     const consultations = await Consultation.find({
       patient: patientId
+      ,doctor: doctorId
     })
       .populate("doctor", "name specialization")
       .sort({ createdAt: -1 });
+
+      if (consultations.length === 0) {
+        return res.status(403).json({
+          message: "No consultation history found or not authorized"
+        });
+      }
 
       const history = consultations.map(c => ({
         date: c.createdAt,
@@ -300,11 +307,9 @@ exports.getDoctorConsultations = async (req, res) => {
     const consultations = await Consultation.find({
       doctor: req.user.id
     })
-    .populate("patient", "name phone age gender")
-      .populate("appointment", "slot consultationType")
+    .select("status symptoms createdAt prescriptions")
+      .populate("patient", "name phone")
       .sort({ createdAt: -1 });
-
-      console.log("Logged in doctor:", req.user.id);
 
     res.json({
       success: true,
