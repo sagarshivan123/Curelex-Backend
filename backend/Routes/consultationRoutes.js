@@ -10,13 +10,19 @@ const {
   getPatientHistory,
   getDoctorConsultations
 } = require("../Controllers/consultationController");
+const { protect ,isDoctor,isPatient} = require("../middleware/authMiddleware");
 
-router.put("/start/:appointmentId", startConsultation);
-router.put("/update/:id", updateConsultation);
-router.post("/prescription/:id", addPrescription);
-router.put("/complete/:id", completeConsultation);
-router.put("/cancel/:id", cancelConsultation);
-router.get("/patient/:patientId", getPatientHistory);
-router.get("/doctor/:doctorId", getDoctorConsultations);
+router.put("/start/:appointmentId", protect, isDoctor, startConsultation);
 
+router.put("/update/:id", protect, isDoctor, updateConsultation);
+
+router.post("/prescription/:id", protect, isDoctor, addPrescription);
+
+router.put("/complete/:id", protect, isDoctor, completeConsultation);
+
+router.put("/cancel/:id", protect, cancelConsultation);
+
+router.get("/history/:patientId", protect, isDoctor, getPatientHistory);
+
+router.get("/doctor", protect,  isDoctor,getDoctorConsultations);
 module.exports = router;

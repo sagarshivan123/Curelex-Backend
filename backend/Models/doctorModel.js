@@ -1,22 +1,34 @@
 const mongoose = require("mongoose");
-const slotSchema=require("./slotModel")
-
 
 const doctorSchema = new mongoose.Schema({
-  name:{
-    type:String,
-    required:true
+  name: {
+    type: String,
+    required: true
   },
 
-  specialization:String,
-
-  isAvailable:{
-    type:Boolean,
-    default:true
+  email: {
+    type: String,
+    required: true,
+    unique: true
   },
 
+  password: {
+    type: String,
+    required: true
+  },
 
-},{timestamps:true});
+  specialization: String,
 
+  isAvailable: {
+    type: Boolean,
+    default: true
+  },
 
-module.exports = mongoose.model("Doctor",doctorSchema);
+  role: {
+    type: String,
+    default: "doctor"
+  }
+
+}, { timestamps: true });
+
+module.exports = mongoose.model("Doctor", doctorSchema);

@@ -7,15 +7,16 @@ const {bookAppointment,  getPatientAppointments,
 }=require("../Controllers/appointmentController.js");
 
 const router = express.Router();
+const { protect, isDoctor, isPatient } = require("../middleware/authMiddleware");
 
-router.post("/book", bookAppointment);
+router.post("/book",  protect, isPatient, bookAppointment);
 
-router.get("/patient/:id", getPatientAppointments);
+router.get("/patient", protect, isPatient, getPatientAppointments);
 
-router.get("/getAll-appointments/:id", getDoctorAppointments);
+router.get("/getAll-appointments", protect,isDoctor,  getDoctorAppointments);
 
-router.get("/pending-appointments/:id",getPendingAppointments)
+router.get("/pending-appointments", protect,isDoctor,  getPendingAppointments);
 
-router.patch("/cancel/:id", cancelAppointment);
+router.patch("/cancel/:id", protect, cancelAppointment);
 
 module.exports = router;

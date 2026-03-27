@@ -33,34 +33,15 @@ status: {
 reason: {
   type: String
 },
-meetingLink: {
-  type: String
-},
-
-prescription: {
-  type: String
-},
 
 cancelledBy: {
   type: String,
   enum: ["patient", "doctor"]
 },
 
-// cancellationReason: {
-//   type: String
-// }
 },
 {
     timestamps: true
 });
-appointmentSchema.index(
-  { doctor: 1, appointmentDate: 1, startTime: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      appointmentDate: { $type: true },
-      startTime: { $type: true }
-    }
-  }
-);
+
 module.exports = mongoose.model('Appointment', appointmentSchema);

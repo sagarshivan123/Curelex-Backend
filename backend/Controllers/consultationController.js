@@ -14,6 +14,11 @@ exports.startConsultation = async (req, res) => {
         message: "Appointment not found"
       });
     }
+    if (appointment.doctor.toString() !== req.user.id) {
+      return res.status(403).json({
+        message: "Not authorized"
+      });
+    }
 
     if (["cancelled", "rejected"].includes(appointment.status)) {
       return res.status(400).json({
@@ -21,7 +26,6 @@ exports.startConsultation = async (req, res) => {
       });
     }
 
-    // auto-confirm if pending
     if (appointment.status === "pending") {
       appointment.status = "confirmed";
       await appointment.save();
@@ -31,7 +35,14 @@ exports.startConsultation = async (req, res) => {
       appointment: appointmentId
     });
 
+    
     if (consultation) {
+      if (consultation.doctor.toString() !== req.user.id) {
+        return res.status(403).json({
+          message: "Not authorized"
+        });
+      }
+      
       if (consultation.status === "Ongoing") {
         return res.status(400).json({
           message: "Consultation already ongoing"
@@ -102,19 +113,34 @@ exports.updateConsultation = async (req, res) => {
 exports.addPrescription = async (req, res) => {
   try {
     const { medicines } = req.body;
+    if (!Array.isArray(medicines) || medicines.length === 0) {
+      return res.status(400).json({
+        message: "Medicines are required"
+      });
+    }
 
     const consultation = await Consultation.findById(req.params.id);
-
     if (!consultation) {
       return res.status(404).json({ message: "Consultation not found" });
     }
+    if (consultation.doctor.toString() !== req.user.id) {
+      return res.status(403).json({
+        message: "Not authorized"
+      });
+    }
+    
     if (consultation.status === "Completed") {
       return res.status(400).json({
         message: "Cannot modify completed consultation"
       });
     }
+    const existingNames = consultation.prescription.map(p => p.medicineName);
 
-    consultation.prescription = medicines;
+    const newMeds = medicines.filter(
+      m => !existingNames.includes(m.medicineName)
+    );
+    
+    consultation.prescription.push(...newMeds);
 
     await consultation.save();
 
@@ -132,6 +158,11 @@ exports.addPrescription = async (req, res) => {
 exports.completeConsultation = async (req, res) => {
   try {
     const consultation = await Consultation.findById(req.params.id);
+    if (consultation.doctor.toString() !== req.user.id) {
+      return res.status(403).json({
+        message: "Not authorized"
+      });
+    }
 
     if (!consultation) {
       return res.status(404).json({ message: "Consultation not found" });
@@ -176,7 +207,11 @@ exports.completeConsultation = async (req, res) => {
 exports.cancelConsultation = async (req, res) => {
   try {
     const consultation = await Consultation.findById(req.params.id);
-
+    if (consultation.doctor.toString() !== req.user.id) {
+      return res.status(403).json({
+        message: "Not authorized"
+      });
+    }
     if (!consultation) {
       return res.status(404).json({ message: "Consultation not found" });
     }
@@ -218,29 +253,58 @@ exports.cancelConsultation = async (req, res) => {
 
 exports.getPatientHistory = async (req, res) => {
   try {
+    const { patientId } = req.params;
+    const doctorId = req.user.id;
+
+    const hasAccess = await Appointment.exists({
+      patient: patientId,
+      doctor: doctorId
+    });
+    
+if (!hasAccess) {
+  return res.status(403).json({
+    message: "You are not authorized to view this patient's history"
+  });
+}
+
     const consultations = await Consultation.find({
-      patient: req.params.patientId
+      patient: patientId
     })
-    .populate("doctor", "name specialization")
-    .sort({ createdAt: -1 });
+      .populate("doctor", "name specialization")
+      .sort({ createdAt: -1 });
+
+      const history = consultations.map(c => ({
+        date: c.createdAt,
+        doctor: c.doctor?.name,
+        specialization: c.doctor?.specialization,
+        symptoms: c.symptoms,
+        diagnosis: c.diagnosis,
+        notes: c.notes,
+        medicines: c.prescription
+      }));
 
     res.json({
       success: true,
-      consultations
+      history
     });
 
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({
+      message: err.message
+    });
   }
 };
 
 exports.getDoctorConsultations = async (req, res) => {
   try {
     const consultations = await Consultation.find({
-      doctor: req.params.doctorId
+      doctor: req.user.id
     })
-    .populate("appointment")
-    .sort({ createdAt: -1 });
+    .populate("patient", "name phone age gender")
+      .populate("appointment", "slot consultationType")
+      .sort({ createdAt: -1 });
+
+      console.log("Logged in doctor:", req.user.id);
 
     res.json({
       success: true,

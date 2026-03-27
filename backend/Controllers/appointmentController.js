@@ -5,25 +5,26 @@ const { sendNotification } = require("../Utils/NotificationService");
 
 
 //Book Appointment
-exports.bookAppointment=async(req,res)=>{
-  try{
-     const {patient,doctor,reason,consultationType}=req.body;
+exports.bookAppointment = async (req, res) => {
+  try {
+    const patient = req.user.id;
+    const { doctor, reason, consultationType } = req.body;
 
-    if (!patient || !doctor|| !consultationType) {
+    if (!doctor || !consultationType) {
       return res.status(400).json({
-        message: "All required fields must be provided"
+        message: "Doctor and consultation type are required"
       });
     }
 
     const existing = await Appointment.findOne({
       patient,
       doctor,
-      status: "pending"
+      status: { $in: ["pending", "confirmed"] }
     });
-    
-    if(existing){
+
+    if (existing) {
       return res.status(400).json({
-        message:"You already have a pending appointment request with this doctor"
+        message: "You already have a pending/confirmed appointment with this doctor"
       });
     }
 
@@ -39,13 +40,7 @@ exports.bookAppointment=async(req,res)=>{
         message: "Doctor is currently unavailable"
       });
     }
-    const patientData = await Patient.findById(patient);
 
-if (!patientData) {
-  return res.status(404).json({
-    message: "Patient not found"
-  });
-}
     const appointment = await Appointment.create({
       patient,
       doctor,
@@ -59,6 +54,7 @@ if (!patientData) {
       appointment
     });
 
+
     sendNotification({
       user: doctor,
       userModel: "Doctor",
@@ -66,22 +62,23 @@ if (!patientData) {
       message: "A patient has requested an appointment"
     }).catch(console.error);
 
-
-  }catch(error){
+  } catch (error) {
     res.status(500).json({
       message: error.message
     });
   }
-}
+};
 
 //Get Patient Appointments
 exports.getPatientAppointments=async(req,res)=>{
   try{
-    const patientId = req.params.id;
+    const patientId = req.user.id;
 
     const appointments = await Appointment.find({
       patient: patientId
-    }).populate("doctor");
+    }).select("consultationType reason status createdAt")
+    .populate("doctor", "name specialization email")
+    .sort({ createdAt: -1 });
 
     res.json({
       success: true,
@@ -99,10 +96,12 @@ exports.getPatientAppointments=async(req,res)=>{
 //Get Doctor Appointments
 exports.getDoctorAppointments=async(req,res)=>{
   try{
-    const doctorId=req.params.id;
+    const doctorId=req.user.id;
     const appointments=await Appointment.find({
       doctor:doctorId
-    }).populate("patient").sort({ appointmentDate: 1 });
+    }).select("consultationType reason status createdAt")
+    .populate("patient", "name email")
+    .sort({ createdAt: -1 });
 
     res.json({
       success:true,
@@ -118,10 +117,14 @@ exports.getDoctorAppointments=async(req,res)=>{
 // Only Pending Appointments
 exports.getPendingAppointments = async (req,res)=>{
   try{
+    const doctorId = req.user.id; // 🔥 from token
+
     const appointments = await Appointment.find({
-      doctor:req.params.id,
-      status:"pending"
-    }).sort({createdAt:1});
+      doctor: doctorId,
+      status: "pending"
+    }) .select("consultationType reason status createdAt")
+    .populate("patient", "name email") .sort({ createdAt: 1 });
+
 
     res.json({
       success:true,
@@ -136,10 +139,8 @@ exports.getPendingAppointments = async (req,res)=>{
 }
 
 //Cancel Appointment
-exports.cancelAppointment=async(req,res)=>{
+exports.cancelAppointment = async (req, res) => {
   try {
-    const { cancelledBy } = req.body;
-
     const appointment = await Appointment.findById(req.params.id);
 
     if (!appointment) {
@@ -147,54 +148,67 @@ exports.cancelAppointment=async(req,res)=>{
         message: "Appointment not found"
       });
     }
-    if(appointment.status === "completed"){
-      return res.status(400).json({
-        message:"Completed appointments cannot be cancelled"
+
+    const cancelledBy = req.user.role;
+
+    if (
+      cancelledBy === "patient" &&
+      appointment.patient.toString() !== req.user.id
+    ) {
+      return res.status(403).json({
+        message: "You can only cancel your own appointment"
       });
     }
-    if (appointment.status === "cancelled" || appointment.status === "rejected") {
+
+    if (
+      cancelledBy === "doctor" &&
+      appointment.doctor.toString() !== req.user.id
+    ) {
+      return res.status(403).json({
+        message: "You can only manage your own appointments"
+      });
+    }
+
+    if (appointment.status === "completed") {
+      return res.status(400).json({
+        message: "Completed appointments cannot be cancelled"
+      });
+    }
+
+    if (["cancelled", "rejected"].includes(appointment.status)) {
       return res.status(400).json({
         message: "Appointment already cancelled/rejected"
       });
     }
-    
-    appointment.status = cancelledBy === "doctor" ? "rejected" : "cancelled";
+
+    const isDoctor = cancelledBy === "doctor";
+
+    appointment.status = isDoctor ? "rejected" : "cancelled";
     appointment.cancelledBy = cancelledBy;
-    
-    //clear slot if appointment is cancelled or rejected
     appointment.slot = undefined;
-    
+
     await appointment.save();
 
     res.json({
       success: true,
-      message: cancelledBy === "doctor"
+      message: isDoctor
         ? "Appointment rejected by doctor"
         : "Appointment cancelled by patient",
       appointment
     });
 
-    const targetUser =
-  cancelledBy === "doctor"
-    ? appointment.patient
-    : appointment.doctor;
+    sendNotification({
+      user: isDoctor ? appointment.patient : appointment.doctor,
+      userModel: isDoctor ? "Patient" : "Doctor",
+      title: isDoctor ? "Appointment Rejected" : "Appointment Cancelled",
+      message: isDoctor
+        ? "Doctor rejected your appointment"
+        : "Patient cancelled the appointment"
+    }).catch(console.error);
 
-const targetModel =
-  cancelledBy === "doctor" ? "Patient" : "Doctor";
-
-sendNotification({
-  user: targetUser,
-  userModel: targetModel,
-  title: "Appointment Cancelled",
-  message:
-    cancelledBy === "doctor"
-      ? "Doctor rejected your appointment"
-      : "Patient cancelled the appointment"
-}).catch(console.error);
-
-  } catch(error){
+  } catch (error) {
     res.status(500).json({
       message: error.message
     });
   }
-}
+};

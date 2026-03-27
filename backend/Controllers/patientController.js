@@ -1,34 +1,41 @@
 const Patient = require("../Models/patientModel");
+const bcrypt = require("bcryptjs");
 
-
-// Create Patient
-exports.createPatient = async (req, res) => {
+// Register Patient
+exports.registerPatient = async (req, res) => {
   try {
-    const { name, phone, age, gender } = req.body;
+    const { name, email, phone, password, age, gender } = req.body;
 
-    if (!name || !phone) {
+    if (!name || !email || !phone || !password) {
       return res.status(400).json({
-        message: "Name and phone are required"
+        message: "Name, email, phone and password are required"
       });
     }
 
-    const existing = await Patient.findOne({ phone });
+    const existing = await Patient.findOne({
+      $or: [{ email }, { phone }]
+    });
 
     if (existing) {
       return res.status(400).json({
-        message: "Patient already exists"
+        message: "Patient already exists with this email or phone"
       });
     }
 
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const patient = await Patient.create({
       name,
+      email,
       phone,
+      password: hashedPassword,
       age,
       gender
     });
 
     res.status(201).json({
       success: true,
+      message: "Patient registered successfully",
       patient
     });
 

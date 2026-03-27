@@ -2,25 +2,44 @@ const Doctor = require("../Models/doctorModel");
 const Appointment = require("../Models/appointmentModel");
 const Consultation = require("../Models/consultationModel");
 const { sendNotification } = require("../Utils/NotificationService");
+const bcrypt = require("bcryptjs");
 
-exports.createDoctor = async (req,res)=>{
-  try{
+exports.registerDoctor = async (req, res) => {
+  try {
+    const { name, email, password, specialization } = req.body;
 
-    const { name, specialization } = req.body;
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        message: "Name, email and password are required"
+      });
+    }
+
+    const existing = await Doctor.findOne({ email });
+
+    if (existing) {
+      return res.status(400).json({
+        message: "Doctor already exists"
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const doctor = await Doctor.create({
       name,
+      email,
+      password: hashedPassword,
       specialization
     });
 
     res.status(201).json({
-      success:true,
+      success: true,
+      message: "Doctor created successfully",
       doctor
     });
 
-  }catch(error){
+  } catch (error) {
     res.status(500).json({
-      message:error.message
+      message: error.message
     });
   }
 };
@@ -48,6 +67,11 @@ exports.assignSlot = async(req,res)=>{
       });
     }
 
+    if (appointment.doctor.toString() !== req.user.id) {
+      return res.status(403).json({
+        message: "Not authorized for this appointment"
+      });
+    }
 
         // Check slot conflict
     const conflict = await Appointment.findOne({
@@ -176,7 +200,7 @@ exports.updateAssignSlot = async (req, res) => {
   }
 };
 
-exports.toggleAvailability = async (req,res)=>{
+exports.doctorAvailability = async (req,res)=>{
   try{
 
     const doctorId = req.params.id;
